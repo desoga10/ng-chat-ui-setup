@@ -1,27 +1,76 @@
-# NgChat
+<!-- ## Database Table Schema -->
+## users table
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 17.0.0.
+* id (uuid)
+* full_name (text)
+* avatar_url (text)
 
-## Development server
+## Creating a users table
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+```sql
+CREATE TABLE public.users (
+   id uuid not null references auth.users on delete cascade,
+   full_name text NULL,
+   avatar_url text NULL,
+   primary key (id)
+);
+```
 
-## Code scaffolding
+## Enable Row Level Security
 
-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
+```sql
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+```
 
-## Build
+## Permit Users Access Their Profile
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
+```sql
+CREATE POLICY "Permit Users to Access Their Profile"
+  ON public.users
+  FOR SELECT
+  USING ( auth.uid() = id );
+```
 
-## Running unit tests
+## Permit Users to Update Their Profile
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
+```sql
+CREATE POLICY "Permit Users to Update Their Profile"
+  ON public.users
+  FOR UPDATE
+  USING ( auth.uid() = id );
+```
 
-## Running end-to-end tests
+## Supabase Functions
 
-Run `ng e2e` to execute the end-to-end tests via a platform of your choice. To use this command, you need to first add a package that implements end-to-end testing capabilities.
+```sql
+CREATE
+OR REPLACE FUNCTION public.user_profile() RETURNS TRIGGER AS $$ BEGIN INSERT INTO public.users (id, full_name,avatar_url)
+VALUES
+  (
+    NEW.id,
+    NEW.raw_user_meta_data ->> 'full_name'::TEXT,
+    NEW.raw_user_meta_data ->> 'avatar_url'::TEXT,
+  );
+RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
 
-## Further help
+## Supabase Trigger
 
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.io/cli) page.
+```sql
+  CREATE TRIGGER
+  create_user_trigger
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE PROCEDURE
+    public.user_profile();
+```
+
+## Chat_Messages table (Real Time)
+
+* id (uuid)
+* Created At (date)
+* text (text)
+* editable (boolean)
+* sender (uuid)
